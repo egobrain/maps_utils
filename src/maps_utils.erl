@@ -5,6 +5,7 @@
          rename_key/3,
          rename_keys/2,
          map_and_rename/2,
+         filter/2,
          diff/2
         ]).
 
@@ -25,6 +26,14 @@ map_and_rename(Fun, Map) ->
         {NewK, NewV} = Fun(OldK, OldV),
         maps:put(NewK, NewV, M)
     end, #{}, Map).
+
+filter(Fun, Map) ->
+    maps:fold(fun(K, V, M) ->
+        case Fun(K, V) of
+            true -> M;
+            false -> maps:remove(K, M)
+        end
+    end, Map, Map).
 
 diff(From, To) ->
     lists:reverse(diff(From, To, [], [])).
@@ -96,6 +105,13 @@ map_and_rename_test() ->
         map_and_rename(
             fun(K, V) -> {atom_to_list(K), V * 2} end,
             #{a => 1, b => 2})).
+
+filter_test() ->
+    ?assertEqual(
+         #{a => 1, b => 2},
+         filter(
+             fun(_, V) -> V < 3 end,
+             #{a => 1, b => 2, c => 3, d => 4})).
 
 diff_test_() ->
     [
