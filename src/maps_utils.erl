@@ -1,11 +1,30 @@
 -module(maps_utils).
 
 %% API exports
--export([diff/2]).
+-export([
+         rename_key/3,
+         rename_keys/2,
+         map_and_rename/2,
+         diff/2
+        ]).
 
 %%====================================================================
 %% API functions
 %%====================================================================
+
+rename_key(OldName, NewName, Map) ->
+    maps:put(NewName, maps:get(OldName, Map), maps:remove(OldName, Map)).
+
+rename_keys(RenameFun, Map) ->
+    maps:fold(fun(OldK, V, M) ->
+        maps:put(RenameFun(OldK), V, M)
+    end, #{}, Map).
+
+map_and_rename(Fun, Map) ->
+    maps:fold(fun(OldK, OldV, M) ->
+        {NewK, NewV} = Fun(OldK, OldV),
+        maps:put(NewK, NewV, M)
+    end, #{}, Map).
 
 diff(From, To) ->
     lists:reverse(diff(From, To, [], [])).
@@ -62,6 +81,21 @@ to_iodata(P) -> P.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+rename_key_test() ->
+    ?assertEqual(#{b => 1}, rename_key(a, b, #{a => 1})).
+
+rename_keys_test() ->
+    ?assertEqual(
+        #{"a" => 1, "b" => 2},
+        rename_keys(fun erlang:atom_to_list/1, #{a => 1, b => 2})).
+
+map_and_rename_test() ->
+    ?assertEqual(
+        #{"a" => 2, "b" => 4},
+        map_and_rename(
+            fun(K, V) -> {atom_to_list(K), V * 2} end,
+            #{a => 1, b => 2})).
 
 diff_test_() ->
     [
