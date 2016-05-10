@@ -177,18 +177,10 @@ diff_test_() ->
 
 merge_with_test_() ->
     [
-     ?_test(?assertEqual(
-           #{a => 1},
-           merge_with(fun(A, B) -> A+B end, #{}, #{a => 1}))),
-     ?_test(?assertEqual(
-           #{a => 1},
-           merge_with(fun(A, B) -> A+B end, #{a => 1}, #{}))),
-     ?_test(?assertEqual(
-           #{a => 1, b => 1},
-           merge_with(fun(A, B) -> A+B end, #{a => 1}, #{b => 1}))),
-     ?_test(?assertEqual(
-           #{a => 3},
-           merge_with(fun(A, B) -> A+B end, #{a => 1}, #{a => 2})))
+     ?_test(?assertEqual(#{a => 1}, merge_with(fun(A, B) -> A+B end, #{}, #{a => 1}))),
+     ?_test(?assertEqual(#{a => 1}, merge_with(fun(A, B) -> A+B end, #{a => 1}, #{}))),
+     ?_test(?assertEqual(#{a => 1, b => 1}, merge_with(fun(A, B) -> A+B end, #{a => 1}, #{b => 1}))),
+     ?_test(?assertEqual(#{a => 3}, merge_with(fun(A, B) -> A+B end, #{a => 1}, #{a => 2})))
     ].
 
 -endif.
