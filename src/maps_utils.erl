@@ -5,6 +5,7 @@
          rename_key/3,
          rename_keys/2,
          map_and_rename/2,
+         merge_with/3,
          filter/2,
          diff/2
         ]).
@@ -26,6 +27,14 @@ map_and_rename(Fun, Map) ->
         {NewK, NewV} = Fun(OldK, OldV),
         maps:put(NewK, NewV, M)
     end, #{}, Map).
+
+merge_with(Fun, M1, M2) ->
+    maps:fold(fun(K1, V1, M) ->
+        maps:put(K1, case maps:find(K1, M2) of
+            {ok, V2} -> Fun(V1, V2);
+            error -> V1
+        end, M)
+    end, M2, M1).
 
 filter(Fun, Map) ->
     maps:fold(fun(K, V, M) ->
@@ -164,6 +173,22 @@ diff_test_() ->
          ],
          diff(#{a => 1, b => [1, #{c => 3}, 7], d => 4},
               #{e => 1, b => [2, #{c => 4}], d => 4, k => #{l => 1}})))
+    ].
+
+merge_with_test_() ->
+    [
+     ?_test(?assertEqual(
+           #{a => 1},
+           merge_with(fun(A, B) -> A+B end, #{}, #{a => 1}))),
+     ?_test(?assertEqual(
+           #{a => 1},
+           merge_with(fun(A, B) -> A+B end, #{a => 1}, #{}))),
+     ?_test(?assertEqual(
+           #{a => 1, b => 1},
+           merge_with(fun(A, B) -> A+B end, #{a => 1}, #{b => 1}))),
+     ?_test(?assertEqual(
+           #{a => 3},
+           merge_with(fun(A, B) -> A+B end, #{a => 1}, #{a => 2})))
     ].
 
 -endif.
