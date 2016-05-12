@@ -7,6 +7,7 @@
          map_and_rename/2,
          merge_with/3,
          filter/2,
+         filtermap/2,
          diff/2
         ]).
 
@@ -43,6 +44,14 @@ filter(Fun, Map) ->
             false -> maps:remove(K, M)
         end
     end, Map, Map).
+
+filtermap(Fun, Map) ->
+    maps:fold(fun(K, V, M) ->
+        case Fun(K, V) of
+            {true, NewV} -> maps:put(K, NewV, M);
+            false -> M
+        end
+    end, #{}, Map).
 
 diff(From, To) ->
     lists:reverse(diff(From, To, [], [])).
@@ -121,6 +130,20 @@ filter_test() ->
          filter(
              fun(_, V) -> V < 3 end,
              #{a => 1, b => 2, c => 3, d => 4})).
+
+filtermap_test_() ->
+    [
+     ?_test(?assertEqual(#{}, filtermap(fun(_K, V) -> {true, V} end, #{}))),
+     ?_test(?assertEqual(#{}, filtermap(fun(_K, V) -> false end, #{a => 1, b => 2}))),
+     ?_test(?assertEqual(
+         #{a => 2, c => 6},
+         filtermap(fun(_K, V) ->
+             case V rem 2 of
+                 1 -> {true, V*2};
+                 _ -> false
+             end
+         end, #{a => 1, b => 2, c => 3})))
+    ].
 
 diff_test_() ->
     [
