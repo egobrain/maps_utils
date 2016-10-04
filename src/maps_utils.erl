@@ -8,7 +8,9 @@
          merge_with/3,
          filter/2,
          filtermap/2,
-         diff/2
+         diff/2,
+         take/2,
+         take/3
         ]).
 
 %%====================================================================
@@ -74,6 +76,15 @@ diff(From, To, Path, Log) when is_list(From); is_list(To) ->
 diff(From, To, _Path, Log) when From =:= To -> Log;
 diff(_From, To, Path, Log) ->
     [#{op => replace, path => path(Path), value => To}|Log].
+
+%% erlang 19 backport
+take(Key, Map) ->
+    Value = maps:get(Key, Map),
+    {Value, maps:remove(Key, Map)}.
+
+take(Key, Map, Default) ->
+    Value = maps:get(Key, Map, Default),
+    {Value, maps:remove(Key, Map)}.
 
 %%====================================================================
 %% Internal functions
