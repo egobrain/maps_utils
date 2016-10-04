@@ -217,4 +217,10 @@ merge_with_test_() ->
      ?_test(?assertEqual(#{a => 3}, merge_with(fun(A, B) -> A+B end, #{a => 1}, #{a => 2})))
     ].
 
+take_test_() ->
+    Map = #{a => 1, b =>2},
+    [
+        ?_test(?assertEqual({2, #{a => 1}}, take(b, Map))),
+        ?_test(?assertEqual({undefined, Map}, take(c, Map, undefined)))
+    ].
 -endif.
