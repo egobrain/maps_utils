@@ -70,7 +70,7 @@ diff(From, To, Path, Log) when is_map(From), is_map(To) ->
     lists:foldl(fun({K, V}, L) ->
         [#{op => add, path => path([K|Path]), value => V}|L]
     end, Log2, NewPairs2);
-diff(From, To, Path, Log) when is_list(From); is_list(To) ->
+diff(From, To, Path, Log) when is_list(From), is_list(To) ->
     list_diff(From, To, Path, Log, 0);
 diff(From, To, _Path, Log) when From =:= To -> Log;
 diff(_From, To, Path, Log) ->
