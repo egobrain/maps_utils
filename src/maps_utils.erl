@@ -8,7 +8,8 @@
          merge_with/3,
          filter/2,
          filtermap/2,
-         diff/2
+         diff/2,
+         update/4
         ]).
 
 %%====================================================================
@@ -74,6 +75,13 @@ diff(From, To, Path, Log) when is_list(From); is_list(To) ->
 diff(From, To, _Path, Log) when From =:= To -> Log;
 diff(_From, To, Path, Log) ->
     [#{op => replace, path => path(Path), value => To}|Log].
+
+update(Key, Map, New, UpdateFun) ->
+    maps:put(Key,
+        case maps:find(Key, Map) of
+            {ok, V} -> UpdateFun(V);
+            error -> New
+        end, Map).
 
 %%====================================================================
 %% Internal functions
@@ -204,6 +212,12 @@ merge_with_test_() ->
      ?_test(?assertEqual(#{a => 1}, merge_with(fun(A, B) -> A+B end, #{a => 1}, #{}))),
      ?_test(?assertEqual(#{a => 1, b => 1}, merge_with(fun(A, B) -> A+B end, #{a => 1}, #{b => 1}))),
      ?_test(?assertEqual(#{a => 3}, merge_with(fun(A, B) -> A+B end, #{a => 1}, #{a => 2})))
+    ].
+
+update_test_() ->
+    [
+     ?_test(?assertEqual(#{a => 1}, update(a, #{}, 1, fun(A) -> A+2 end))),
+     ?_test(?assertEqual(#{a => 5}, update(a, #{a => 3}, 1, fun(A) -> A+2 end)))
     ].
 
 -endif.
