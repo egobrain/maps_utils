@@ -12,6 +12,23 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-ifdef(OTP_RELEASE).
+-compile({inline,[take/2]}).
+take(Key, Map) ->
+    maps:take(Key, Map).
+
+-else.
+
+take(Key, Map) ->
+    case maps:find(Key, Map) of
+        {ok, Value} ->
+            {Value, maps:remove(Key, Map)};
+        error ->
+            error
+    end.
+-endif.
+
+
 -type key() :: term().
 -type value() :: term().
 -type action() :: {set, key(), value()}
@@ -46,7 +63,7 @@ apply([{set, Key, Value} | Rest], Map) ->
 
 %% remove Key from map
 apply([{remove, Key} | Rest], Map) ->
-    apply(Rest, maps:without([Key], Map));
+    apply(Rest, maps:remove(Key, Map));
 
 %% apply actions list Apply only if Key exists in Map and equal to Val
 %% else apply ApplyElse actions list if presented
@@ -83,7 +100,7 @@ apply([{ifdef, Key, Apply, ApplyElse} | Rest], Map) ->
 apply([{rename, FromToList} | Rest], Map) ->
     apply([{rename, F,T} || {F,T} <- FromToList] ++ Rest, Map);
 apply([{rename, From, To} | Rest], Map) ->
-    case maps:take(From, Map) of
+    case take(From, Map) of
         {Value, Map2} -> apply(Rest, Map2#{To => Value});
         _ -> apply(Rest, Map)
     end;
