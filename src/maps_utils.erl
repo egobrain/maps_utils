@@ -142,7 +142,7 @@ filter_test() ->
 filtermap_test_() ->
     [
      ?_test(?assertEqual(#{}, filtermap(fun(_K, V) -> {true, V} end, #{}))),
-     ?_test(?assertEqual(#{}, filtermap(fun(_K, V) -> false end, #{a => 1, b => 2}))),
+     ?_test(?assertEqual(#{}, filtermap(fun(_K, _V) -> false end, #{a => 1, b => 2}))),
      ?_test(?assertEqual(
          #{a => 2, c => 6},
          filtermap(fun(_K, V) ->
