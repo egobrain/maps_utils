@@ -34,12 +34,12 @@ take(Key, Map) ->
 -type action() :: {set, key(), value()}
                 | {append, key(), value()}
                 | {remove, key()}
-                | {ifeq, key(), value(), Then :: [tuple()], Else :: [tuple()]}
-                | {ifeq, key(), value(), Then :: [tuple()]}
-                | {ifset, key(), Then :: [tuple()], Else :: [tuple()]}
-                | {ifset, key(), Then :: [tuple()]}
-                | {ifdef, key(), Then :: [tuple()], Else :: [tuple()]}
-                | {ifdef, key(), Then :: [tuple()]}
+                | {ifeq, key(), value(), Then :: [action()], Else :: [action()]}
+                | {ifeq, key(), value(), Then :: [action()]}
+                | {ifset, key(), Then :: [action()], Else :: [action()]}
+                | {ifset, key(), Then :: [action()]}
+                | {ifdef, key(), Then :: [action()], Else :: [action()]}
+                | {ifdef, key(), Then :: [action()]}
                 | {rename, [{From :: key(), To :: key()}]}
                 | {rename, From :: key(), To :: key()}
                 | {with, key() | [key()]}
