@@ -1,6 +1,14 @@
+%% -*- erlang-indent-level: 2;indent-tabs-mode: nil -*-
+%% ex: ts=4 sw=4 et
+%%------------------------------------------------------------------------------
+
 -module(maps_utils_test).
 
 -include_lib("eunit/include/eunit.hrl").
+
+%%==============================================================================
+%% Helper functions
+%%==============================================================================
 
 rename_key_test() ->
     ?assertEqual(#{b => 1}, maps_utils:rename_key(a, b, #{a => 1})).
@@ -96,3 +104,31 @@ update_test_() ->
                                                       fun(A) -> A+2 end))),
      ?_test(?assertEqual(#{a => 5}, maps_utils:update(a, #{a => 3}, 1,
                                                       fun(A) -> A+2 end)))].
+
+apply_diff_test() ->
+    chk_apply(#{k1 => 1, k2 => #{k21 => 21, k22 => 22}},
+                #{k1 => 1, k2 => #{k21 => 21, k22 => 23}}),
+    % TODO: fix move
+%    maps_utils_test 127 {D1, D2, Diff, Current}:
+%    '{#{k1 => 1,k2 => 2},
+%       #{k1 => 1,k3 => 2},
+%       [#{from => [{k2,map}],op => move,path => [{k3,map}]}],
+%       #{k1 => 1,k2 => 2,k3 => undefined}}'
+    chk_apply(#{k1 => 1, k2 => 2},
+              #{k1 => 1, k3 => 2}),
+    chk_apply([#{k1 => 1, k2 => 2}, #{k3 => 3, k4 => 4}],
+              [#{k1 => 1, k2 => 3}, #{k4 => 2}]),
+    chk_apply(#{k1 => [1, 2, 3]},
+              #{k1 => [1, 2, 3, 4]}),
+    chk_apply(#{k1 => [1, 2, 3]},
+              #{k1 => [1, 2]}).
+
+%%==============================================================================
+%% Helper functions
+%%==============================================================================
+
+chk_apply(D1, D2) ->
+    Diff = maps_utils:diff(D1, D2),
+    Current = maps_utils:apply_diff(D1, Diff),
+    io:format(user, "~p ~p {D1, D2, Diff, Current}: '~130p' ~n", [?MODULE, ?LINE, {D1, D2, Diff, Current}]),
+    ?assertEqual(D2, Current).
