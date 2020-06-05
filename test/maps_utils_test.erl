@@ -6,6 +6,34 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+%%------------------------------------------------------------------------------
+%% ANSI ESC color codes
+%%------------------------------------------------------------------------------
+-define(CLR_RED,     "\e[0;31m").
+-define(CLR_CYAN,    "\e[0;36m").
+-define(CLR_RESET,   "\e[0;0m").
+
+-define(DBG(Fmt, Args),
+        io:format(user, ?CLR_CYAN ++ Fmt ++ ?CLR_RESET ++ "\n", Args)).
+
+%%
+%% Test will immediately fail if test was called with
+%% ABORT_ON_ERROR=true rebar3 test
+%%
+%% Without the ABORT_ON_ERROR parameter passed to the test error message will
+%% be printed with red but test will continue.
+%%
+-define(ERROR(Fmt, Args),
+        begin
+            io:format(user, ?CLR_RED ++ Fmt ++ ?CLR_RESET ++ "\n", Args),
+            case os:getenv("ABORT_ON_ERROR") of
+                "true" ->
+                    erlang:halt(1);
+                _ ->
+                    ok
+            end
+        end).
+
 %%==============================================================================
 %% Helper functions
 %%==============================================================================
@@ -124,6 +152,146 @@ get_val_test() ->
                                        [{0, list}, {0, list}])).
 
 %%==============================================================================
+%% Performance tests
+%%==============================================================================
+
+perf_test_() ->
+    {timeout, 20, [
+                   fun diff_and_apply_diff/0
+                  ]}.
+
+diff_and_apply_diff() ->
+    D1 = [
+          #{id => "0001", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0002", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0003", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0004", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0005", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0006", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0007", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0008", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0009", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0010", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }}],
+    D2 = [
+          #{id => "0011", data => #{  %% change id 0001 -> 0011
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0002", data => #{
+                            name => "ahoy popacsek",
+                            addr => "ot azoy str no 999",   %% address -> addr
+                            age => 99,
+                            number_of_children => 318
+                           }},
+          #{id => "0003", data => #{
+                            name => "mordechai brochi",   %% change name
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0004", data => #{
+                            %% delete age field
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            number_of_children => 3
+                           }},
+          #{id => "0005", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            %% add DOB
+                            dob => {1820, 10, 01},
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0006", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0007", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0008", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0009", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }},
+          #{id => "0010", data => #{
+                            name => "ahoy popacsek",
+                            address => "ot azoy str no 999",
+                            age => 99,
+                            number_of_children => 3
+                           }}],
+    Diff = maps_utils:diff(D1, D2),
+    perf_test(fun() -> maps_utils:diff(D1, D2) end, 15000, 2000,
+              "maps_utils:diff/2"),
+    perf_test(fun() -> maps_utils:apply_diff(D1, Diff) end, 15000, 2000,
+              "maps_utils:apply_diff/2").
+
+%%==============================================================================
 %% Helper functions
 %%==============================================================================
 
@@ -131,3 +299,19 @@ chk_apply(D1, D2) ->
     Diff = maps_utils:diff(D1, D2),
     Current = maps_utils:apply_diff(D1, Diff),
     ?assertEqual(D2, Current).
+
+perf_test(ExecFun, Count, MinExecPerSec, FunctionName) ->
+    Lst = lists:seq(1, Count),
+    {Time, _} = timer:tc(fun() ->
+                            lists:foreach(fun(_) -> ExecFun() end, Lst)
+                         end),
+    ExecPerSec = Count / (Time / 1000000),
+    ?DBG("Performance of ~s: ~p", [FunctionName, ExecPerSec]),
+    case ExecPerSec < MinExecPerSec of
+        true ->
+            ?ERROR("Execution of ~s is too slow. Min should be: ~p/sec."
+                   "Current speed: ~p/sec",
+                   [FunctionName, MinExecPerSec, ExecPerSec]);
+        false ->
+            ok
+    end.
