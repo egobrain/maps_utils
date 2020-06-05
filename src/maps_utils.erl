@@ -20,9 +20,11 @@
 %% exported for eunit only
 -export([get_val/2]).
 
+-type op()            :: move | rename | remove | add.
 -type path_el()       :: {Key :: term(), list | map}.
 -type path()          :: list(path_el()).
--type diff_operator() :: map().
+-type diff_operator() :: #{path => path(), value => term(), op => op(),
+                           from => path()}.
 -type index()         :: non_neg_integer() | '-'.
 
 %%==============================================================================
@@ -172,7 +174,16 @@ get_val(Map, [{Key, map} | T]) when is_map(Map) ->
       Res :: term().
 apply_op(#{op := Op, path := Path} = Diff, Data) ->
     NewVal = get_new_val(Diff, Data),
-    apply_op(Data, Op, Path, NewVal).
+    NewData = apply_op(Data, Op, Path, NewVal),
+    %% if it's a move operator let's delete the element under the given path using
+    %% a separate remove operator
+    case Op of
+        move ->
+            #{from := From} = Diff,
+            apply_op(NewData, remove, From, undefined);
+        _ ->
+            NewData
+    end.
 
 -spec get_new_val(Diff, Data) -> Res when
       Diff :: diff_operator(),
@@ -185,21 +196,21 @@ get_new_val(Diff, _Data) ->
 
 -spec apply_op(Data, Op, Path, NewValue) -> Res when
       Data :: term(),
-      Op :: diff_operator(),
+      Op :: atom(),
       Path :: path(),
       NewValue :: term(),
       Res :: term().
 apply_op(_Data, _Op, [], NewVal) ->
     NewVal;
-apply_op(Data, remove, [{Index, list}], _NewVal) when is_list(Data) ->
-    rm_list_el(Data, Index);
+apply_op(Data, remove, [{Idx, list}], _NewVal) when is_list(Data) ->
+    rm_list_el(Data, Idx);
 apply_op(Data, remove, [{Key, map}], _NewVal) when is_map(Data) ->
     maps:remove(Key, Data);
-apply_op(Data, Op, [{Index, list} | T], NewVal) when is_list(Data) ->
-    ListEl = nth_el(Data, Index, NewVal),
-    RemainingEls = rm_list_el(Data, Index),
+apply_op(Data, Op, [{Idx, list} | T], NewVal) when is_list(Data) ->
+    ListEl = nth_el(Data, Idx, NewVal),
+    RemainingEls = rm_list_el(Data, Idx),
     NewEl = apply_op(ListEl, Op, T, NewVal),
-    add_list_el(RemainingEls, Index, NewEl);
+    add_list_el(RemainingEls, Idx, NewEl);
 apply_op(Data, Op, [{Key, map} | T], NewVal) when is_map(Data) ->
     MapValue = map_value(Data, Key, T, NewVal),
     NewMapVal = apply_op(MapValue, Op, T, NewVal),
@@ -214,9 +225,9 @@ apply_op(Data, Op, [{Key, map} | T], NewVal) when is_map(Data) ->
 map_value(Map, Key, Path, NewVal) ->
     maps:get(Key, Map, def_value(Path, NewVal)).
 
--spec add_list_el(List, Index, El) -> Res when
+-spec add_list_el(List, Idx, El) -> Res when
       List :: list(),
-      Index :: index(),
+      Idx :: index(),
       El :: term(),
       Res :: list().
 add_list_el(List, '-', El) ->
@@ -227,9 +238,9 @@ add_list_el(List, Ind0, El) ->
     LastEls = string:substr(List, Ind),
     FirstEls ++ [El] ++ LastEls.
 
--spec rm_list_el(List, Index) -> Res when
+-spec rm_list_el(List, Idx) -> Res when
       List :: list(),
-      Index :: index(),
+      Idx :: index(),
       Res :: list().
 rm_list_el(List, '-') ->
     List;
@@ -238,9 +249,9 @@ rm_list_el(List, Ind0) ->
     [E ||
      {E, I} <- lists:zip(List, lists:seq(1, length(List))), I =/= Ind].
 
--spec nth_el(List, Index, NewVal) -> Res when
+-spec nth_el(List, Idx, NewVal) -> Res when
       List :: list(),
-      Index :: index(),
+      Idx :: index(),
       NewVal :: term(),
       Res :: term().
 nth_el(_List, '-', NewVal) ->
