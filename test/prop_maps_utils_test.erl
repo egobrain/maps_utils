@@ -19,10 +19,13 @@
 %% Properties
 %%==============================================================================
 
+%%------------------------------------------------------------------------------
+%% prop_diff_and_apply_diff
+%%------------------------------------------------------------------------------
 prop_diff_and_apply_diff(doc) ->
-    "Test if  Diff = diff(D1, D2), D2 == apply_diff(D1, Diff) is true";
+    "Test whether  Diff = diff(D1, D2), D2 == apply_diff(D1, Diff) is always true";
 prop_diff_and_apply_diff(opts) ->
-    [{numtests, 10000}].
+    [{numtests, 1000}].
 
 prop_diff_and_apply_diff() ->
     ?FORALL({D1, D2}, {map_like_data(), map_like_data()},
@@ -44,7 +47,7 @@ prop_diff_and_apply_diff() ->
 
 -spec map_like_data() -> proplists:proplist().
 map_like_data() ->
-    ?LET(List, ?SIZED(Size, map_like_data(Size div 3)),
+    ?LET(List, ?SIZED(Size, map_like_data(Size div 5)),
          unique_keys(List, [], [], 1)).
 
 %%==============================================================================
@@ -57,8 +60,8 @@ map_like_data(0) ->
 map_like_data(Size) ->
     list(
       frequency([
-                 {8, {key(), oneof([1, 2, 3])}},
-                 {2, {key(), list(integer())}},
+                 {9, {key(), oneof([1, 2, 3])}},
+                 {4, {key(), list(integer())}},
                  {1, {key(), map_like_data(Size - 1)}}
                 ])).
 
@@ -76,7 +79,7 @@ unique_keys([{_Key, Value} | T], Acc, Path, Index) ->
 unique_key(Path, Index) ->
     PostFix = string:join(
                 [integer_to_list(El) || El <- lists:reverse([Index | Path])], "_"),
-    list_to_atom("key_" ++ PostFix).
+    list_to_binary("key_" ++ PostFix).
 
 key() ->
     oneof([key1, key2, key3, key4, key5, key6]).

@@ -5,9 +5,10 @@
 -module(maps_utils_test).
 
 -include("maps_utils_test.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %%==============================================================================
-%% Helper functions
+%% Test cases
 %%==============================================================================
 
 rename_key_test() ->
@@ -122,6 +123,24 @@ apply_diff_test() ->
 get_val_test() ->
     ?assertEqual(1, maps_utils:get_val([[1, 2], [3, 4]],
                                        [{0, list}, {0, list}])).
+
+sort_operators_test() ->
+    ?assertEqual(
+         [
+          #{op => add, path => [{1, list}]},
+          #{op => remove, path => [{0, list}, {2, list}]},
+          #{op => remove, path => [{0, list}, {1, list}]},
+          #{op => add, path => [{2, list}]},
+          #{op => remove, path => [{0, list}, {0, list}]}
+         ],
+       maps_utils:sort_remove_operators(
+         [
+          #{op => add, path => [{1, list}]},
+          #{op => remove, path => [{0, list}, {0, list}]},
+          #{op => remove, path => [{0, list}, {2, list}]},
+          #{op => add, path => [{2, list}]},
+          #{op => remove, path => [{0, list}, {1, list}]}
+         ])).
 
 %%==============================================================================
 %% Performance tests

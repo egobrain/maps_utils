@@ -18,7 +18,8 @@
         ]).
 
 %% exported for eunit only
--export([get_val/2]).
+-export([get_val/2,
+         sort_remove_operators/1]).
 
 -type op()            :: move | rename | remove | add.
 -type path_el()       :: {Key :: term(), list | map}.
@@ -144,7 +145,8 @@ update(Key, Map, New, UpdateFun) ->
       Data :: term(),
       Diff :: list(diff_operator()),
       Res :: term().
-apply_diff(Data, Diff) ->
+apply_diff(Data, Diff0) ->
+    Diff = sort_remove_operators(Diff0),
     lists:foldl(fun apply_op/2, Data, Diff).
 
 %%==============================================================================
@@ -164,9 +166,59 @@ get_val(Lst, [{Idx, list} | T]) when is_list(Lst) ->
 get_val(Map, [{Key, map} | T]) when is_map(Map) ->
     get_val(maps:get(Key, Map), T).
 
+-spec sort_remove_operators(Diff) -> Res when
+      Diff :: list(diff_operator()),
+      Res :: list(diff_operator()).
+sort_remove_operators(Diff) ->
+    filtered_sort(Diff, fun is_remove_operator/1,
+                  fun compare_remove_operators/2).
+
 %%==============================================================================
 %% Internal functions
 %%==============================================================================
+
+%%
+%% Sort only filtered elements of the list. FilterFun is used to select
+%% some matching elements. Those selected elements will be sorted. Order
+%% of other elements will remain the same. For example sort only positive numbers:
+%% filtered_sort([0, 2, 0, 1, 0, 3],
+%%               fun(A) -> A > 0 end,
+%%               fun(A, B) -> A < B end) ->
+%%     [0, 1, 0, 2, 0, 3]
+%%
+-spec filtered_sort(List, FilterFun, SortFun) -> Res when
+      List :: list(),
+      FilterFun :: fun((term()) -> boolean()),
+      SortFun :: fun((term(), term()) -> boolean()),
+      Res :: list().
+filtered_sort(Lst, FilterFun, SortFun) ->
+  Length = length(Lst),
+  IndexedLst = lists:zip(lists:seq(1, Length), Lst),
+  Filtered = lists:filter(fun({_Idx, El}) -> FilterFun(El) end,
+                          IndexedLst),
+  {FilteredIdxs, FilteredEls} = lists:unzip(Filtered),
+  Sorted = lists:sort(SortFun, FilteredEls),
+  FilteredWithIdxs = lists:zip(FilteredIdxs, Sorted),
+  Remaining = IndexedLst -- Filtered,
+  AllSorted = lists:sort(fun({Idx1, _}, {Idx2, _}) -> Idx1 < Idx2 end,
+                         FilteredWithIdxs ++ Remaining),
+  {_, Result} = lists:unzip(AllSorted),
+  Result.
+
+-spec is_remove_operator(Op) -> Res when
+      Op :: diff_operator(),
+      Res :: boolean().
+is_remove_operator(#{op := remove}) ->
+    true;
+is_remove_operator(_Op) ->
+    false.
+
+-spec compare_remove_operators(Op1, Op2) -> Res when
+      Op1 :: diff_operator(),
+      Op2 :: diff_operator(),
+      Res :: boolean().
+compare_remove_operators(#{path := Path1}, #{path := Path2}) ->
+    Path1 > Path2.
 
 -spec apply_op(Diff, Data) -> Res when
       Diff :: diff_operator(),
