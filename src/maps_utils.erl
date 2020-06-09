@@ -1,3 +1,7 @@
+%% -*- erlang-indent-level: 2;indent-tabs-mode: nil -*-
+%% ex: ts=4 sw=4 et
+%%------------------------------------------------------------------------------
+
 -module(maps_utils).
 
 %% API exports
@@ -10,27 +14,57 @@
          filtermap/2,
          diff/2,
          diff/3,
-         update/4
+         update/4,
+         apply_diff/2
         ]).
 
-%%====================================================================
-%% API functions
-%%====================================================================
+%% exported for eunit only
+-export([get_val/2,
+         sort_remove_operators/1]).
 
+-type op()            :: move | rename | remove | add.
+-type path_el()       :: {Key :: term(), list | map}.
+-type path()          :: list(path_el()).
+-type diff_operator() :: #{path => path(), value => term(), op => op(),
+                           from => path()}.
+-type index()         :: non_neg_integer() | '-'.
+
+%%==============================================================================
+%% API functions
+%%==============================================================================
+
+-spec rename_key(OldName, NewName, Map) -> Res when
+      OldName :: term(),
+      NewName :: term(),
+      Map :: map(),
+      Res :: map().
 rename_key(OldName, NewName, Map) ->
     maps:put(NewName, maps:get(OldName, Map), maps:remove(OldName, Map)).
 
+-spec rename_keys(RenameFun, Map) -> Res when
+      RenameFun :: fun(),
+      Map :: map(),
+      Res :: map().
 rename_keys(RenameFun, Map) ->
     maps:fold(fun(OldK, V, M) ->
         maps:put(RenameFun(OldK), V, M)
     end, #{}, Map).
 
+-spec map_and_rename(Fun, Map) -> Res when
+      Fun :: fun(),
+      Map :: map(),
+      Res :: map().
 map_and_rename(Fun, Map) ->
     maps:fold(fun(OldK, OldV, M) ->
         {NewK, NewV} = Fun(OldK, OldV),
         maps:put(NewK, NewV, M)
     end, #{}, Map).
 
+-spec merge_with(Fun, M1, M2) -> Res when
+      Fun :: fun(),
+      M1 :: map(),
+      M2 :: map(),
+      Res :: map().
 merge_with(Fun, M1, M2) ->
     maps:fold(fun(K1, V1, M) ->
         maps:put(K1, case maps:find(K1, M2) of
@@ -39,6 +73,10 @@ merge_with(Fun, M1, M2) ->
         end, M)
     end, M2, M1).
 
+-spec filter(Fun, Map) -> Res when
+      Fun :: fun(),
+      Map :: map(),
+      Res :: map().
 filter(Fun, Map) ->
     maps:fold(fun(K, V, M) ->
         case Fun(K, V) of
@@ -47,6 +85,10 @@ filter(Fun, Map) ->
         end
     end, Map, Map).
 
+-spec filtermap(Fun, Map) -> Res when
+      Fun :: fun(),
+      Map :: map(),
+      Res :: map().
 filtermap(Fun, Map) ->
     maps:fold(fun(K, V, M) ->
         case Fun(K, V) of
@@ -55,28 +97,45 @@ filtermap(Fun, Map) ->
         end
     end, #{}, Map).
 
+-spec diff(From, To) -> Res when
+      From :: map(),
+      To :: map(),
+      Res :: list(diff_operator()).
 diff(From, To) ->
   lists:reverse(diff(From, To, [], [])).
 
+-spec diff(From, To, Path, Log) -> Res when
+      From :: map() | list(),
+      To :: map() | list(),
+      Path :: path(),
+      Log :: list(),
+      Res :: list(diff_operator()).
 diff(From, To, Path, Log) when is_map(From), is_map(To) ->
-  FromKeys = maps:keys(From),
-  NewPairs = maps:to_list(maps:without(FromKeys, To)),
-  {Log2, NewPairs2} = maps:fold(
-    fun(K, FromV, {L, New}) ->
-      case maps:find(K, To) of
-        {ok, ToV} -> {diff(FromV, ToV, [K|Path], L), New};
-        error -> maybe_moved(K, FromV, NewPairs, Path, L)
-      end
-    end, {Log, NewPairs}, From),
-  lists:foldl(fun({K, V}, L) ->
-    [#{op => add, path => path([K|Path]), value => V}|L]
-              end, Log2, NewPairs2);
+    FromKeys = maps:keys(From),
+    NewPairs = maps:to_list(maps:without(FromKeys, To)),
+    {Log2, NewPairs2} = maps:fold(
+        fun(K, FromV, {L, New}) ->
+            case maps:find(K, To) of
+                {ok, ToV} -> {diff(FromV, ToV, [{K, map} | Path], L), New};
+                error -> maybe_moved(K, FromV, NewPairs, Path, L)
+            end
+        end, {Log, NewPairs}, From),
+    lists:foldl(fun({K, V}, L) ->
+        [#{op => add, path => path([{K, map} | Path]), value => V}|L]
+    end, Log2, NewPairs2);
 diff(From, To, Path, Log) when is_list(From), is_list(To) ->
   list_diff(From, To, Path, Log, 0);
 diff(From, To, _Path, Log) when From =:= To -> Log;
 diff(_From, To, Path, Log) ->
   [#{op => replace, path => path(Path), value => To}|Log].
 
+
+-spec diff(From, To, UpdateFun) -> Res when
+      From :: map(),
+      To :: map(),
+      UpdateFun :: fun((From :: map(), To :: map(),
+                        Path :: path(), Log :: list()) -> map()),
+      Res :: list(diff_operator()).
 diff(From, To, Fun) ->
     lists:reverse(diff(From, To, [], [], Fun)).
 
@@ -87,13 +146,13 @@ diff(From, To, Path, Log, Fun) when is_map(From), is_map(To) ->
     fun(K, FromV, {L, New}) ->
       case maps:find(K, To) of
         {ok, ToV} ->
-          {diff(FromV, ToV, [K | Path], L, Fun), New};
+          {diff(FromV, ToV, [{K, map} | Path], L, Fun), New};
         error ->
           maybe_moved(K, FromV, NewPairs, Path, L)
       end
     end, {Log, NewPairs}, From),
   lists:foldl(fun({K, V}, L) ->
-                [#{op => add, path => path([K | Path]), value => V} | L]
+                [#{op => add, path => path([{K, map} | Path]), value => V} | L]
               end, Log2, NewPairs2);
 diff(From, To, Path, Log, Fun) when is_list(From), is_list(To) ->
   list_diff(From, To, Path, Log, 0, Fun);
@@ -108,6 +167,12 @@ diff(From, To, Path, Log, Fun) when is_integer(From), is_integer(To), To > From 
 diff(_From, To, Path, Log, _Fun) ->
   [#{op => replace, path => path(Path), value => To}|Log].
 
+-spec update(Key, Map, New, UpdateFun) -> Res when
+      Key :: term(),
+      Map :: map(),
+      New :: term(),
+      UpdateFun :: fun(),
+      Res :: map().
 update(Key, Map, New, UpdateFun) ->
     maps:put(Key,
         case maps:find(Key, Map) of
@@ -115,197 +180,237 @@ update(Key, Map, New, UpdateFun) ->
             error -> New
         end, Map).
 
-%%====================================================================
+-spec apply_diff(Data, Diff) -> Res when
+      Data :: term(),
+      Diff :: list(diff_operator()),
+      Res :: term().
+apply_diff(Data, Diff0) ->
+    Diff = sort_remove_operators(Diff0),
+    lists:foldl(fun apply_op/2, Data, Diff).
+
+%%==============================================================================
+%% Exported for eunit
+%%==============================================================================
+
+-spec get_val(Data, Path) -> Res when
+      Data :: term(),
+      Path :: path(),
+      Res :: term().
+get_val(Lst, [{Idx, list}]) when is_list(Lst) ->
+    lists:nth(Idx + 1, Lst);
+get_val(Map, [{Key, map}]) when is_map(Map) ->
+    maps:get(Key, Map);
+get_val(Lst, [{Idx, list} | T]) when is_list(Lst) ->
+    get_val(lists:nth(Idx + 1, Lst), T);
+get_val(Map, [{Key, map} | T]) when is_map(Map) ->
+    get_val(maps:get(Key, Map), T).
+
+-spec sort_remove_operators(Diff) -> Res when
+      Diff :: list(diff_operator()),
+      Res :: list(diff_operator()).
+sort_remove_operators(Diff) ->
+    filtered_sort(Diff, fun is_remove_operator/1,
+                  fun compare_remove_operators/2).
+
+%%==============================================================================
 %% Internal functions
-%%====================================================================
+%%==============================================================================
+
+%%
+%% Sort only filtered elements of the list. FilterFun is used to select
+%% some matching elements. Those selected elements will be sorted. Order
+%% of other elements will remain the same. For example sort only positive numbers:
+%% filtered_sort([0, 2, 0, 1, 0, 3],
+%%               fun(A) -> A > 0 end,
+%%               fun(A, B) -> A < B end) ->
+%%     [0, 1, 0, 2, 0, 3]
+%%
+-spec filtered_sort(List, FilterFun, SortFun) -> Res when
+      List :: list(),
+      FilterFun :: fun((term()) -> boolean()),
+      SortFun :: fun((term(), term()) -> boolean()),
+      Res :: list().
+filtered_sort(Lst, FilterFun, SortFun) ->
+  Length = length(Lst),
+  IndexedLst = lists:zip(lists:seq(1, Length), Lst),
+  Filtered = lists:filter(fun({_Idx, El}) -> FilterFun(El) end,
+                          IndexedLst),
+  {FilteredIdxs, FilteredEls} = lists:unzip(Filtered),
+  Sorted = lists:sort(SortFun, FilteredEls),
+  FilteredWithIdxs = lists:zip(FilteredIdxs, Sorted),
+  Remaining = IndexedLst -- Filtered,
+  AllSorted = lists:sort(fun({Idx1, _}, {Idx2, _}) -> Idx1 < Idx2 end,
+                         FilteredWithIdxs ++ Remaining),
+  {_, Result} = lists:unzip(AllSorted),
+  Result.
+
+-spec is_remove_operator(Op) -> Res when
+      Op :: diff_operator(),
+      Res :: boolean().
+is_remove_operator(#{op := remove}) ->
+    true;
+is_remove_operator(_Op) ->
+    false.
+
+-spec compare_remove_operators(Op1, Op2) -> Res when
+      Op1 :: diff_operator(),
+      Op2 :: diff_operator(),
+      Res :: boolean().
+compare_remove_operators(#{path := Path1}, #{path := Path2}) ->
+    Path1 > Path2.
+
+-spec apply_op(Diff, Data) -> Res when
+      Diff :: diff_operator(),
+      Data :: term(),
+      Res :: term().
+apply_op(#{op := Op, path := Path} = Diff, Data) ->
+    NewVal = get_new_val(Diff, Data),
+    NewData = apply_op(Data, Op, Path, NewVal),
+    %% if it's a move operator let's delete the element under the given path using
+    %% a separate remove operator
+    case Op of
+        move ->
+            #{from := From} = Diff,
+            apply_op(NewData, remove, From, undefined);
+        _ ->
+            NewData
+    end.
+
+-spec get_new_val(Diff, Data) -> Res when
+      Diff :: diff_operator(),
+      Data :: term(),
+      Res :: term().
+get_new_val(#{op := move, from := From}, Data) ->
+    get_val(Data, From);
+get_new_val(Diff, _Data) ->
+    maps:get(value, Diff, undefined).
+
+-spec apply_op(Data, Op, Path, NewValue) -> Res when
+      Data :: term(),
+      Op :: atom(),
+      Path :: path(),
+      NewValue :: term(),
+      Res :: term().
+apply_op(_Data, _Op, [], NewVal) ->
+    NewVal;
+apply_op(Data, remove, [{Idx, list}], _NewVal) when is_list(Data) ->
+    rm_list_el(Data, Idx);
+apply_op(Data, remove, [{Key, map}], _NewVal) when is_map(Data) ->
+    maps:remove(Key, Data);
+apply_op(Data, Op, [{Idx, list} | T], NewVal) when is_list(Data) ->
+    ListEl = nth_el(Data, Idx, NewVal),
+    RemainingEls = rm_list_el(Data, Idx),
+    NewEl = apply_op(ListEl, Op, T, NewVal),
+    add_list_el(RemainingEls, Idx, NewEl);
+apply_op(Data, Op, [{Key, map} | T], NewVal) when is_map(Data) ->
+    MapValue = map_value(Data, Key, T, NewVal),
+    NewMapVal = apply_op(MapValue, Op, T, NewVal),
+    maps:put(Key, NewMapVal, Data).
+
+-spec map_value(Map, Key, Path, NewVal) -> Res when
+      Map :: map(),
+      Key :: term(),
+      Path :: path(),
+      NewVal :: term(),
+      Res :: term().
+map_value(Map, Key, Path, NewVal) ->
+    maps:get(Key, Map, def_value(Path, NewVal)).
+
+-spec add_list_el(List, Idx, El) -> Res when
+      List :: list(),
+      Idx :: index(),
+      El :: term(),
+      Res :: list().
+add_list_el(List, '-', El) ->
+    List ++ [El];
+add_list_el(List, Ind0, El) ->
+    Ind = Ind0 + 1,
+    FirstEls = string:substr(List, 1, Ind - 1),
+    LastEls = string:substr(List, Ind),
+    FirstEls ++ [El] ++ LastEls.
+
+-spec rm_list_el(List, Idx) -> Res when
+      List :: list(),
+      Idx :: index(),
+      Res :: list().
+rm_list_el(List, '-') ->
+    List;
+rm_list_el(List, Ind0) ->
+    Ind = Ind0 + 1,
+    [E ||
+     {E, I} <- lists:zip(List, lists:seq(1, length(List))), I =/= Ind].
+
+-spec nth_el(List, Idx, NewVal) -> Res when
+      List :: list(),
+      Idx :: index(),
+      NewVal :: term(),
+      Res :: term().
+nth_el(_List, '-', NewVal) ->
+    NewVal;
+nth_el(List, Ind0, _NewVal) ->
+    Ind = Ind0 + 1,
+    lists:nth(Ind, List).
+
+-spec def_value(Path, NewVal) -> Res when
+      Path :: path(),
+      NewVal :: term(),
+      Res :: term().
+def_value([{_, list} | _], _NewVal) ->
+    [];
+def_value([{_, map} | _], _NewVal) ->
+    #{};
+def_value([], NewVal) ->
+    NewVal.
+
+-spec maybe_moved(K, FromV, Pairs, Path, Log) -> Res when
+      K :: term(),
+      FromV :: term(),
+      Pairs :: proplists:proplist(),
+      Path :: path(),
+      Log :: list(),
+      Res :: term().
 maybe_moved(K, FromV, Pairs, Path, L) ->
     maybe_moved_(K, FromV, Pairs, Path, L, []).
 
 maybe_moved_(K, _V, [], Path, Log, Acc) ->
-    {[#{op => remove, path => path([K|Path])}|Log], Acc};
+    {[#{op => remove, path => path([{K, map} | Path])}|Log], Acc};
 maybe_moved_(K, V, [{NewK, V}|Rest], Path, Log, Acc) ->
-    {[#{op => move, path => path([NewK|Path]), from => path([K|Path])}|Log],
+    {[#{op => move, path => path([{NewK, map} | Path]),
+        from => path([{K, map} | Path])} | Log],
      Acc ++ Rest};
 maybe_moved_(K, V, [Other|Rest], Path, Log, Acc) ->
     maybe_moved_(K, V, Rest, Path, Log, [Other|Acc]).
 
+-spec list_diff(From, To, Path, Log, Counter) -> Res when
+      From :: list(),
+      To :: list(),
+      Path :: path(),
+      Log :: list(),
+      Counter :: index(),
+      Res :: list(diff_operator()).
 list_diff([From|RestF], [To|RestT], Path, Log, Cnt) ->
-  list_diff(RestF, RestT, Path, diff(From, To, [Cnt|Path], Log), Cnt+1);
+    list_diff(RestF, RestT, Path, diff(From, To, [{Cnt, list}|Path], Log), Cnt+1);
 list_diff([_|Rest], [], Path, Log, Cnt) ->
-  NewLog = [#{op => remove, path => path([Cnt|Path])}|Log],
-  list_diff(Rest, [], Path, NewLog, Cnt+1);
+    NewLog = [#{op => remove, path => path([{Cnt, list}|Path])}|Log],
+    list_diff(Rest, [], Path, NewLog, Cnt+1);
 list_diff([], Rest, Path, Log, _Cnt) ->
   lists:foldl(fun(V, L) ->
-    [#{op => add, path => path(["-"|Path]), value => V}|L]
-              end, Log, Rest).
+              [#{op => add, path => path([{'-', list} | Path]), value => V} | L]
+      end, Log, Rest).
 
 list_diff([From|RestF], [To|RestT], Path, Log, Cnt, Fun) ->
-    list_diff(RestF, RestT, Path, diff(From, To, [Cnt|Path], Log, Fun), Cnt+1, Fun);
+    list_diff(RestF, RestT, Path, diff(From, To, [{Cnt, list} | Path], Log, Fun),
+              Cnt + 1, Fun);
 list_diff([_|Rest], [], Path, Log, Cnt, Fun) ->
-    NewLog = [#{op => remove, path => path([Cnt|Path])}|Log],
-    list_diff(Rest, [], Path, NewLog, Cnt+1, Fun);
-list_diff([], Rest, Path, Log, _Cnt, Fun) ->
+    NewLog = [#{op => remove, path => path([{Cnt, list} | Path])} | Log],
+    list_diff(Rest, [], Path, NewLog, Cnt + 1, Fun);
+list_diff([], Rest, Path, Log, _Cnt, _Fun) ->
     lists:foldl(fun(V, L) ->
-        [#{op => add, path => path(["-"|Path]), value => V}|L]
+        [#{op => add, path => path([{'-', list} | Path]), value => V}|L]
     end, Log, Rest).
 
+-spec path(Path) -> Res when
+      Path :: path(),
+      Res :: path().
 path(Path) ->
-    iolist_to_binary([["/", to_iodata(P)] || P <- lists:reverse(Path)]).
-
-to_iodata(P) when is_atom(P) -> atom_to_list(P);
-to_iodata(P) when is_integer(P) -> integer_to_list(P);
-to_iodata(P) -> P.
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
-rename_key_test() ->
-    ?assertEqual(#{b => 1}, rename_key(a, b, #{a => 1})).
-
-rename_keys_test() ->
-    ?assertEqual(
-        #{"a" => 1, "b" => 2},
-        rename_keys(fun erlang:atom_to_list/1, #{a => 1, b => 2})).
-
-map_and_rename_test() ->
-    ?assertEqual(
-        #{"a" => 2, "b" => 4},
-        map_and_rename(
-            fun(K, V) -> {atom_to_list(K), V * 2} end,
-            #{a => 1, b => 2})).
-
-filter_test() ->
-    ?assertEqual(
-         #{a => 1, b => 2},
-         filter(
-             fun(_, V) -> V < 3 end,
-             #{a => 1, b => 2, c => 3, d => 4})).
-
-filtermap_test_() ->
-    [
-     ?_test(?assertEqual(#{}, filtermap(fun(_K, V) -> {true, V} end, #{}))),
-     ?_test(?assertEqual(#{}, filtermap(fun(_K, _V) -> false end, #{a => 1, b => 2}))),
-     ?_test(?assertEqual(
-         #{a => 2, c => 6},
-         filtermap(fun(_K, V) ->
-             case V rem 2 of
-                 1 -> {true, V*2};
-                 _ -> false
-             end
-         end, #{a => 1, b => 2, c => 3})))
-    ].
-
-diff_test_() ->
-    [
-     ?_test(?assertEqual([], diff(#{a => 1}, #{a => 1}))),
-     ?_test(?assertEqual(
-         [
-          #{ op => replace, path => <<"/a">>, value => 2}
-         ],
-         diff(#{a => 1}, #{a => 2}))),
-     ?_test(?assertEqual(
-         [
-          #{ op => move, path => <<"/b">>, from => <<"/a">>}
-         ],
-         diff(#{a => 1}, #{b => 1}))),
-     ?_test(?assertEqual(
-         [
-          #{ op => add, path => <<"/a">>, value => 1}
-         ],
-         diff(#{}, #{a => 1}))),
-     ?_test(?assertEqual(
-         [
-          #{ op => remove, path => <<"/a">>}
-         ],
-         diff(#{a => 1}, #{}))),
-     ?_test(?assertEqual(
-         [
-          #{op => remove,path => <<"/a">>},
-          #{op => add,path => <<"/c">>,value => 3},
-          #{op => add,path => <<"/b">>,value => 2}
-         ],
-         diff(#{a => 1}, #{b => 2, c => 3}))),
-     ?_test(?assertEqual(
-         [
-          #{op => move,path => <<"/e">>,from => <<"/a">>},
-          #{op => replace,path => <<"/b/0">>,value => 2},
-          #{op => replace,path => <<"/b/1/c">>,value => 4},
-          #{op => add,path => <<"/b/-">>,value => 7},
-          #{op => add,path => <<"/k">>,value => #{l => 1}}
-         ],
-         diff(#{a => 1, b => [1, #{c => 3}], d => 4},
-              #{e => 1, b => [2, #{c => 4}, 7], d => 4, k => #{l => 1}}))),
-
-     ?_test(?assertEqual(
-         [
-          #{op => move,path => <<"/e">>,from => <<"/a">>},
-          #{op => replace,path => <<"/b/0">>,value => 2},
-          #{op => replace,path => <<"/b/1/c">>,value => 4},
-          #{op => remove,path => <<"/b/2">>},
-          #{op => add,path => <<"/k">>,value => #{l => 1}}
-         ],
-         diff(#{a => 1, b => [1, #{c => 3}, 7], d => 4},
-              #{e => 1, b => [2, #{c => 4}], d => 4, k => #{l => 1}})))
-    ].
-
-diff_nums_test_() ->
-  Fun = fun(_, To, _, Log) -> [#{fun_result => To} | Log] end,
-  [
-    ?_test(?assertEqual([], diff(#{a => 1}, #{a => 1}, Fun))),
-    ?_test(?assertEqual([#{fun_result => 2}], diff(#{a => 1}, #{a => 2}, Fun))),
-    ?_test(?assertEqual(
-      [
-        #{ op => move, path => <<"/b">>, from => <<"/a">>}
-      ],
-      diff(#{a => 1}, #{b => 1}, Fun))),
-    ?_test(?assertEqual(
-      [
-        #{ op => add, path => <<"/a">>, value => 1}
-      ],
-      diff(#{}, #{a => 1}, Fun))),
-    ?_test(?assertEqual(
-      [
-        #{ op => remove, path => <<"/a">>}
-      ],
-      diff(#{a => 1}, #{}, Fun))),
-    ?_test(?assertEqual(
-      [
-        #{op => remove,path => <<"/a">>},
-        #{op => add,path => <<"/c">>,value => 3},
-        #{op => add,path => <<"/b">>,value => 2}
-      ],
-      diff(#{a => 1}, #{b => 2, c => 3}, Fun))),
-    ?_test(?assertEqual(
-      [#{from => <<"/a">>,op => move,path => <<"/e">>},
-       #{fun_result => 2},
-       #{fun_result => 4},
-       #{op => add,path => <<"/b/-">>,value => 7},
-       #{op => add,path => <<"/k">>,value => #{l => 1}}],
-      diff(#{a => 1, b => [1, #{c => 3}], d => 4},
-           #{e => 1, b => [2, #{c => 4}, 7], d => 4, k => #{l => 1}}, Fun))),
-
-    ?_test(?assertEqual(
-      [#{fun_result => 2},
-       #{op => replace,path => <<"/b">>,value => y},
-       #{fun_result => 3},
-       #{fun_result => <<"3">>},
-       #{op => remove,path => <<"/e/1">>}],
-      diff(#{a => 1, b => x, c => 4, d => <<"4">>, e => [1, 2]},
-           #{a => 2, b => y, c => 3, d => <<"3">>, e => [1]}, Fun)))
-  ].
-
-merge_with_test_() ->
-    [
-     ?_test(?assertEqual(#{a => 1}, merge_with(fun(A, B) -> A+B end, #{}, #{a => 1}))),
-     ?_test(?assertEqual(#{a => 1}, merge_with(fun(A, B) -> A+B end, #{a => 1}, #{}))),
-     ?_test(?assertEqual(#{a => 1, b => 1}, merge_with(fun(A, B) -> A+B end, #{a => 1}, #{b => 1}))),
-     ?_test(?assertEqual(#{a => 3}, merge_with(fun(A, B) -> A+B end, #{a => 1}, #{a => 2})))
-    ].
-
-update_test_() ->
-    [
-     ?_test(?assertEqual(#{a => 1}, update(a, #{}, 1, fun(A) -> A+2 end))),
-     ?_test(?assertEqual(#{a => 5}, update(a, #{a => 3}, 1, fun(A) -> A+2 end)))
-    ].
-
--endif.
+    lists:reverse(Path).
