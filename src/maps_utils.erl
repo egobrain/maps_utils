@@ -15,7 +15,8 @@
          diff/2,
          diff/3,
          update/4,
-         apply_diff/2
+         apply_diff/2,
+         apply_diff/3
         ]).
 
 %% exported for eunit only
@@ -188,6 +189,18 @@ apply_diff(Data, Diff0) ->
     Diff = sort_remove_operators(Diff0),
     lists:foldl(fun apply_op/2, Data, Diff).
 
+-spec apply_diff(Data, Diff, Fun) -> Res when
+      Data :: term(),
+      Diff :: list(diff_operator()),
+      Fun :: fun(),
+      Res :: term().
+apply_diff(Data, Diff0, Fun) ->
+    Diff = sort_remove_operators(Diff0),
+    lists:foldl(fun(Op, Acc) ->
+                        apply_op(Op, Acc, Fun)
+                end, Data, Diff).
+
+
 %%==============================================================================
 %% Exported for eunit
 %%==============================================================================
@@ -263,8 +276,17 @@ compare_remove_operators(#{path := Path1}, #{path := Path2}) ->
       Diff :: diff_operator(),
       Data :: term(),
       Res :: term().
-apply_op(#{op := Op, path := Path} = Diff, Data) ->
-    NewVal = get_new_val(Diff, Data),
+apply_op(Diff, Data) ->
+    apply_op(Diff, Data, undefined).
+
+-spec apply_op(Diff, Data, Fun) -> Res when
+      Diff :: diff_operator(),
+      Data :: term(),
+      Fun :: undefined | fun((diff_operator()) -> term()),
+      Res :: term().
+apply_op(#{op := Op, path := Path} = Diff, Data, Fun) ->
+    NewVal0 = get_new_val(Diff, Data),
+    NewVal = apply_update_fun(Fun, Diff, NewVal0, Data, Path),
     NewData = apply_op(Data, Op, Path, NewVal),
     %% if it's a move operator let's delete the element under the given path using
     %% a separate remove operator
@@ -274,6 +296,26 @@ apply_op(#{op := Op, path := Path} = Diff, Data) ->
             apply_op(NewData, remove, From, undefined);
         _ ->
             NewData
+    end.
+
+-spec apply_update_fun(Fun, Operator, NewValue, Data, Path) -> Res when
+      Fun :: undefined | fun(),
+      Operator :: diff_operator(),
+      NewValue :: term(),
+      Data :: term(),
+      Path :: path(),
+      Res :: term().
+apply_update_fun(undefined, _Operator, NewValue, _Data, _Path) ->
+    NewValue;
+apply_update_fun(Fun, Operator, NewValue, Data, Path) ->
+    %% first only check if the given operator can be handled with the fun
+    case catch Fun(Operator, 0) of
+        error ->
+            NewValue;
+        _ ->
+            OldValue = get_val(Data, Path),
+            {ok, Result} = Fun(Operator, OldValue),
+            Result
     end.
 
 -spec get_new_val(Diff, Data) -> Res when

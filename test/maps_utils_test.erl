@@ -193,6 +193,29 @@ diff_nums_test_() ->
                                  e => [1]}, Fun)))
     ].
 
+apply_fun_test() ->
+    ReverseCounterFun =
+        fun(#{op := incr, value := Value}, OldValue) ->
+                {ok, OldValue + Value};
+           (_, _) ->
+                error
+        end,
+    ?assertEqual(
+           #{key1 => 4, key2 => 2},
+           maps_utils:apply_diff(
+             #{key1 => 1},
+             [#{op => add, path => [{key2, map}], value => 2},
+              #{op => incr, path => [{key1, map}], value => 3}],
+             ReverseCounterFun)),
+    ?assertEqual(
+       #{key1 => 4, key2 => #{key21 => 31}},
+       maps_utils:apply_diff(
+         #{key1 => 1, key2 => #{key21 => 21}},
+         [#{op => incr, path => [{key2, map}, {key21, map}],
+            value => 10},
+          #{op => incr, path => [{key1, map}], value => 3}],
+         ReverseCounterFun)).
+
 %%==============================================================================
 %% Performance tests
 %%==============================================================================
