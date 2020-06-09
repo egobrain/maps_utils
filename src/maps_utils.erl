@@ -16,12 +16,14 @@
          diff/3,
          update/4,
          apply_diff/2,
-         apply_diff/3
+         apply_diff/3,
+         revert_diff/2
         ]).
 
 %% exported for eunit only
 -export([get_val/2,
-         sort_remove_operators/1]).
+         sort_remove_operators/1,
+         revert_op/1]).
 
 -type op()            :: move | rename | remove | add.
 -type path_el()       :: {Key :: term(), list | map}.
@@ -122,14 +124,18 @@ diff(From, To, Path, Log) when is_map(From), is_map(To) ->
             end
         end, {Log, NewPairs}, From),
     lists:foldl(fun({K, V}, L) ->
-        [#{op => add, path => path([{K, map} | Path]), value => V}|L]
+        [#{op => add, path => path([{K, map} | Path]), value => V} | L]
     end, Log2, NewPairs2);
 diff(From, To, Path, Log) when is_list(From), is_list(To) ->
   list_diff(From, To, Path, Log, 0);
-diff(From, To, _Path, Log) when From =:= To -> Log;
-diff(_From, To, Path, Log) ->
-  [#{op => replace, path => path(Path), value => To}|Log].
+diff(From, To, _Path, Log) when From =:= To ->
+    Log;
+diff(From, To, Path, Log) ->
+  [#{op => replace, path => path(Path), value => To, orig_value => From}|Log].
 
+
+%% TODO handle move operator in revert
+%% TODO check move operator in apply_diff
 
 -spec diff(From, To, UpdateFun) -> Res when
       From :: map(),
@@ -140,6 +146,14 @@ diff(_From, To, Path, Log) ->
 diff(From, To, Fun) ->
     lists:reverse(diff(From, To, [], [], Fun)).
 
+-spec diff(From, To, Path, Log, UpdateFun) -> Res when
+      From :: map(),
+      To :: map(),
+      Path :: path(),
+      Log :: list(),
+      UpdateFun :: fun((From :: map(), To :: map(),
+                        Path :: path(), Log :: list()) -> map()),
+      Res :: list(diff_operator()).
 diff(From, To, Path, Log, Fun) when is_map(From), is_map(To) ->
   FromKeys = maps:keys(From),
   NewPairs = maps:to_list(maps:without(FromKeys, To)),
@@ -165,8 +179,8 @@ diff(From, To, Path, Log, Fun) when is_integer(From), is_integer(To), To < From 
   Fun(From, To, path(Path), Log);
 diff(From, To, Path, Log, Fun) when is_integer(From), is_integer(To), To > From ->
   Fun(From, To, path(Path), Log);
-diff(_From, To, Path, Log, _Fun) ->
-  [#{op => replace, path => path(Path), value => To}|Log].
+diff(From, To, Path, Log, _Fun) ->
+  [#{op => replace, path => path(Path), value => To, orig_value => From} | Log].
 
 -spec update(Key, Map, New, UpdateFun) -> Res when
       Key :: term(),
@@ -200,6 +214,13 @@ apply_diff(Data, Diff0, Fun) ->
                         apply_op(Op, Acc, Fun)
                 end, Data, Diff).
 
+-spec revert_diff(Data, Diff) -> Res when
+      Data :: term(),
+      Diff :: list(diff_operator()),
+      Res :: term().
+revert_diff(Data, Diff) ->
+    RevertedDiff = reverted_diff(Diff),
+    apply_diff(Data, RevertedDiff).
 
 %%==============================================================================
 %% Exported for eunit
@@ -228,6 +249,38 @@ sort_remove_operators(Diff) ->
 %%==============================================================================
 %% Internal functions
 %%==============================================================================
+
+-spec reverted_diff(Diff) -> Res when
+      Diff :: list(diff_operator()),
+      Res :: list(diff_operator()).
+reverted_diff(Diff) ->
+    [revert_op(Op) || Op <- Diff].
+
+-spec revert_op(Op) -> Res when
+      Op :: diff_operator(),
+      Res :: diff_operator().
+revert_op(#{op := add} = Op) ->
+    Op#{op => remove};
+revert_op(#{op := remove, orig_value := Orig, path := Path} = Op) ->
+    ConvertedPath = convert_revert_path(Path, []),
+    Op#{op => add, value => Orig, path => ConvertedPath};
+revert_op(#{op := replace, orig_value := Orig, value := Value} = Op) ->
+    Op#{orig_value => Value, value => Orig};
+revert_op(#{op := move, from := From, path := Path} = Op) ->
+    Op#{from => Path, path => From};
+revert_op(Op) ->
+    Op.
+
+-spec convert_revert_path(Path, Acc) -> Res when
+      Path :: path(),
+      Acc :: path(),
+      Res :: path().
+convert_revert_path([{_, list}], Acc) ->
+    lists:reverse([{'-', list} | Acc]);
+convert_revert_path([El], Acc) ->
+    lists:reverse([El | Acc]);
+convert_revert_path([El | T], Acc) ->
+    convert_revert_path(T, [El | Acc]).
 
 %%
 %% Sort only filtered elements of the list. FilterFun is used to select
@@ -336,12 +389,12 @@ get_new_val(Diff, _Data) ->
 apply_op(_Data, _Op, [], NewVal) ->
     NewVal;
 apply_op(Data, remove, [{Idx, list}], _NewVal) when is_list(Data) ->
-    rm_list_el(Data, Idx);
+    rm_list_el(remove, Data, Idx);
 apply_op(Data, remove, [{Key, map}], _NewVal) when is_map(Data) ->
     maps:remove(Key, Data);
 apply_op(Data, Op, [{Idx, list} | T], NewVal) when is_list(Data) ->
     ListEl = nth_el(Data, Idx, NewVal),
-    RemainingEls = rm_list_el(Data, Idx),
+    RemainingEls = rm_list_el(Op, Data, Idx),
     NewEl = apply_op(ListEl, Op, T, NewVal),
     add_list_el(RemainingEls, Idx, NewEl);
 apply_op(Data, Op, [{Key, map} | T], NewVal) when is_map(Data) ->
@@ -371,13 +424,17 @@ add_list_el(List, Ind0, El) ->
     LastEls = string:substr(List, Ind),
     FirstEls ++ [El] ++ LastEls.
 
--spec rm_list_el(List, Idx) -> Res when
+-spec rm_list_el(Op, List, Idx) -> Res when
+      Op :: atom(),
       List :: list(),
       Idx :: index(),
       Res :: list().
-rm_list_el(List, '-') ->
+rm_list_el(remove, List, '-') ->
+    %% remove last element of the list
+    string:substr(List, 1, length(List) -1);
+rm_list_el(_Op, List, '-') ->
     List;
-rm_list_el(List, Ind0) ->
+rm_list_el(_Op, List, Ind0) ->
     Ind = Ind0 + 1,
     [E ||
      {E, I} <- lists:zip(List, lists:seq(1, length(List))), I =/= Ind].
@@ -414,8 +471,9 @@ def_value([], NewVal) ->
 maybe_moved(K, FromV, Pairs, Path, L) ->
     maybe_moved_(K, FromV, Pairs, Path, L, []).
 
-maybe_moved_(K, _V, [], Path, Log, Acc) ->
-    {[#{op => remove, path => path([{K, map} | Path])}|Log], Acc};
+maybe_moved_(K, V, [], Path, Log, Acc) ->
+    {[#{op => remove, path => path([{K, map} | Path]), orig_value => V} | Log],
+     Acc};
 maybe_moved_(K, V, [{NewK, V}|Rest], Path, Log, Acc) ->
     {[#{op => move, path => path([{NewK, map} | Path]),
         from => path([{K, map} | Path])} | Log],
@@ -431,9 +489,11 @@ maybe_moved_(K, V, [Other|Rest], Path, Log, Acc) ->
       Counter :: index(),
       Res :: list(diff_operator()).
 list_diff([From|RestF], [To|RestT], Path, Log, Cnt) ->
-    list_diff(RestF, RestT, Path, diff(From, To, [{Cnt, list}|Path], Log), Cnt+1);
-list_diff([_|Rest], [], Path, Log, Cnt) ->
-    NewLog = [#{op => remove, path => path([{Cnt, list}|Path])}|Log],
+    list_diff(RestF, RestT, Path, diff(From, To, [{Cnt, list} | Path], Log),
+              Cnt+1);
+list_diff([V | Rest], [], Path, Log, Cnt) ->
+    NewLog = [#{op => remove, path => path([{Cnt, list} | Path]),
+                orig_value => V} | Log],
     list_diff(Rest, [], Path, NewLog, Cnt+1);
 list_diff([], Rest, Path, Log, _Cnt) ->
   lists:foldl(fun(V, L) ->
@@ -443,12 +503,13 @@ list_diff([], Rest, Path, Log, _Cnt) ->
 list_diff([From|RestF], [To|RestT], Path, Log, Cnt, Fun) ->
     list_diff(RestF, RestT, Path, diff(From, To, [{Cnt, list} | Path], Log, Fun),
               Cnt + 1, Fun);
-list_diff([_|Rest], [], Path, Log, Cnt, Fun) ->
-    NewLog = [#{op => remove, path => path([{Cnt, list} | Path])} | Log],
+list_diff([V | Rest], [], Path, Log, Cnt, Fun) ->
+    NewLog = [#{op => remove, path => path([{Cnt, list} | Path]),
+                orig_value => V} | Log],
     list_diff(Rest, [], Path, NewLog, Cnt + 1, Fun);
 list_diff([], Rest, Path, Log, _Cnt, _Fun) ->
     lists:foldl(fun(V, L) ->
-        [#{op => add, path => path([{'-', list} | Path]), value => V}|L]
+        [#{op => add, path => path([{'-', list} | Path]), value => V} | L]
     end, Log, Rest).
 
 -spec path(Path) -> Res when

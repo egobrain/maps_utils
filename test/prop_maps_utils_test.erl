@@ -75,6 +75,29 @@ prop_counters() ->
                       D2 =:= Actual)
         end).
 
+%%------------------------------------------------------------------------------
+%% prop_counters
+%%------------------------------------------------------------------------------
+prop_revert_diff(doc) ->
+    "Test maps_utils:revert_diff/2. Diff = diff(Old, New), "
+    "?assertEqual(Old, revert_diff(New, Diff)) should be always true.";
+prop_revert_diff(opts) ->
+    [{numtests, 500}].
+
+prop_revert_diff() ->
+    ?FORALL({D1, D2}, {map_like_data(), map_like_data()},
+        begin
+            Diff = maps_utils:diff(D1, D2),
+            Actual = maps_utils:revert_diff(D2, Diff),
+            ?WHENFAIL(?ERROR("Failing test:\n"
+                             "D1 = ~p,\n"
+                             "D2 = ~p,\n"
+                             "Diff = ~p\n"
+                             "Actual value: ~p",
+                             [D1, D2, Diff, Actual]),
+                      D1 =:= Actual)
+        end).
+
 %%==============================================================================
 %% Generators
 %%==============================================================================

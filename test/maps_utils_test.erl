@@ -51,7 +51,7 @@ filtermap_test_() ->
 diff_test_() ->
     [?_test(?assertEqual([], maps_utils:diff(#{a => 1}, #{a => 1}))),
      ?_test(?assertEqual(
-         [#{op => replace, path => [{a, map}], value => 2}],
+         [#{op => replace, orig_value => 1, path => [{a, map}], value => 2}],
          maps_utils:diff(#{a => 1}, #{a => 2}))),
      ?_test(?assertEqual(
          [#{op => move, path => [{b, map}], from => [{a, map}]}],
@@ -60,17 +60,19 @@ diff_test_() ->
          [#{op => add, path => [{a, map}], value => 1}],
          maps_utils:diff(#{}, #{a => 1}))),
      ?_test(?assertEqual(
-         [#{op => remove, path => [{a, map}]}],
+         [#{op => remove, orig_value => 1, path => [{a, map}]}],
          maps_utils:diff(#{a => 1}, #{}))),
      ?_test(?assertEqual(
-         [#{op => remove, path => [{a, map}]},
+         [#{op => remove, orig_value => 1, path => [{a, map}]},
           #{op => add, path => [{c, map}], value => 3},
           #{op => add, path => [{b, map}], value => 2}],
          maps_utils:diff(#{a => 1}, #{b => 2, c => 3}))),
      ?_test(?assertEqual(
          [#{op => move, path => [{e, map}], from => [{a, map}]},
-          #{op => replace, path => [{b, map}, {0, list}], value => 2},
-          #{op => replace, path => [{b, map}, {1, list}, {c, map}], value => 4},
+          #{op => replace, orig_value => 1,
+            path => [{b, map}, {0, list}], value => 2},
+          #{op => replace, orig_value => 3,
+            path => [{b, map}, {1, list}, {c, map}], value => 4},
           #{op => add, path => [{b, map}, {'-', list}], value => 7},
           #{op => add, path => [{k, map}], value => #{l => 1}}
          ],
@@ -80,9 +82,11 @@ diff_test_() ->
      ?_test(?assertEqual(
          [
           #{op => move, path => [{e, map}], from => [{a, map}]},
-          #{op => replace, path => [{b, map}, {0, list}], value => 2},
-          #{op => replace, path => [{b, map}, {1, list}, {c, map}], value => 4},
-          #{op => remove, path => [{b, map}, {2, list}]},
+          #{op => replace, orig_value => 1,
+            path => [{b, map}, {0, list}], value => 2},
+          #{op => replace, orig_value => 3,
+            path => [{b, map}, {1, list}, {c, map}], value => 4},
+          #{op => remove, orig_value => 7, path => [{b, map}, {2, list}]},
           #{op => add, path => [{k, map}], value => #{l => 1}}
          ],
          maps_utils:diff(#{a => 1, b => [1, #{c => 3}, 7], d => 4},
@@ -160,12 +164,12 @@ diff_nums_test_() ->
                maps_utils:diff(#{}, #{a => 1}, Fun))),
      ?_test(?assertEqual(
                [
-                #{ op => remove, path => [{a, map}]}
+                #{ op => remove, orig_value => 1, path => [{a, map}]}
                ],
                maps_utils:diff(#{a => 1}, #{}, Fun))),
      ?_test(?assertEqual(
                [
-                #{op => remove, path => [{a, map}]},
+                #{op => remove, orig_value => 1, path => [{a, map}]},
                 #{op => add, path =>  [{c, map}], value => 3},
                 #{op => add, path => [{b, map}], value => 2}
                ],
@@ -180,13 +184,12 @@ diff_nums_test_() ->
                                #{e => 1, b => [2, #{c => 4}, 7], d => 4,
                                  k => #{l => 1}},
                                Fun))),
-
      ?_test(?assertEqual(
                [#{fun_result => 2},
-                #{op => replace, path => [{b, map}], value => y},
+                #{op => replace, orig_value => x, path => [{b, map}], value => y},
                 #{fun_result => 3},
                 #{fun_result => <<"3">>},
-                #{op => remove, path => [{e, map}, {1, list}]}],
+                #{op => remove, orig_value => 2, path => [{e, map}, {1, list}]}],
                maps_utils:diff(#{a => 1, b => x, c => 4, d => <<"4">>,
                                  e => [1, 2]},
                                #{a => 2, b => y, c => 3, d => <<"3">>,
@@ -215,6 +218,21 @@ apply_fun_test() ->
             value => 10},
           #{op => incr, path => [{key1, map}], value => 3}],
          ReverseCounterFun)).
+
+revert_diff_test() ->
+    ?assertEqual(#{op => incr}, maps_utils:revert_op(#{op => incr})),
+    chk_revert(#{k1 => 1, k2 => #{k21 => 21, k22 => 22}},
+               #{k1 => 1, k2 => #{k21 => 21, k22 => 23}}),
+    chk_revert(#{k1 => 1, k2 => 2},
+               #{k1 => 1, k3 => 2}),
+    chk_revert(#{k1 => #{k11 => 11, k12 => 12}},
+               #{k1 => #{k11 => 11, k13 => 12}}),
+    chk_revert([#{k1 => 1, k2 => 2}, #{k3 => 3, k4 => 4}],
+               [#{k1 => 1, k2 => 3}, #{k4 => 2}]),
+    chk_revert(#{k1 => [1, 2, 3]},
+               #{k1 => [1, 2, 3, 4]}),
+    chk_revert(#{k1 => [1, 2, 3]},
+               #{k1 => [1, 2]}).
 
 %%==============================================================================
 %% Performance tests
@@ -364,6 +382,11 @@ chk_apply(D1, D2) ->
     Diff = maps_utils:diff(D1, D2),
     Current = maps_utils:apply_diff(D1, Diff),
     ?assertEqual(D2, Current).
+
+chk_revert(D1, D2) ->
+    Diff = maps_utils:diff(D1, D2),
+    Current = maps_utils:revert_diff(D2, Diff),
+    ?assertEqual(D1, Current).
 
 perf_test(ExecFun, Count, MinExecPerSec, FunctionName) ->
     Lst = lists:seq(1, Count),
