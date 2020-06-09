@@ -25,13 +25,47 @@
 prop_diff_and_apply_diff(doc) ->
     "Test whether  Diff = diff(D1, D2), D2 == apply_diff(D1, Diff) is always true";
 prop_diff_and_apply_diff(opts) ->
-    [{numtests, 1000}].
+    [{numtests, 500}].
 
 prop_diff_and_apply_diff() ->
     ?FORALL({D1, D2}, {map_like_data(), map_like_data()},
         begin
             Diff = maps_utils:diff(D1, D2),
             Actual = maps_utils:apply_diff(D1, Diff),
+            ?WHENFAIL(?ERROR("Failing test:\n"
+                             "D1 = ~p,\n"
+                             "D2 = ~p,\n"
+                             "Diff = ~p\n"
+                             "Actual value: ~p",
+                             [D1, D2, Diff, Actual]),
+                      D2 =:= Actual)
+        end).
+
+%%------------------------------------------------------------------------------
+%% prop_counters
+%%------------------------------------------------------------------------------
+prop_counters(doc) ->
+    "Test funs passed to diff/3 and apply_diff/3. "
+    "No replace operators should be present in the diff. The original data "
+    "structure should be restored using the old data and the operators "
+    "containing counter updates";
+prop_counters(opts) ->
+    [{numtests, 500}].
+
+prop_counters() ->
+    CounterFun =  fun(From, To, Path, Log) ->
+                          [#{op => incr, path => Path, value => To - From} | Log]
+                  end,
+    ReverseFun =
+        fun(#{op := incr, value := Value}, OldValue) ->
+                {ok, OldValue + Value};
+           (_, _) ->
+                error
+        end,
+    ?FORALL({D1, D2}, {map_like_data(), map_like_data()},
+        begin
+            Diff = maps_utils:diff(D1, D2, CounterFun),
+            Actual = maps_utils:apply_diff(D1, Diff, ReverseFun),
             ?WHENFAIL(?ERROR("Failing test:\n"
                              "D1 = ~p,\n"
                              "D2 = ~p,\n"
