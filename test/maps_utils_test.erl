@@ -374,6 +374,33 @@ diff_and_apply_diff() ->
     perf_test(fun() -> maps_utils:apply_diff(D1, Diff) end, 15000, 2000,
               "maps_utils:apply_diff/2").
 
+convert_diff_paths_test() ->
+    ?assertEqual(
+       [#{op => replace, value => 2,
+          path => [{key1, map}, {key2, map}, {1, list}]},
+        #{op => remove,
+          path => [{key1, map}, {1, list}, {key2, map}, {2, list}]}],
+       maps_utils:convert_diff_paths(
+         [#{op => replace, value => 2, path => <<"/key1/key2/1">>},
+          #{op => remove, path => <<"/key1/1/key2/2">>}], atom)),
+    ?assertEqual(
+       [#{op => replace, value => 2,
+          path => [{"key1", map}, {"key2", map}, {1, list}]},
+        #{op => remove,
+          path => [{"key1", map}, {1, list}, {"key2", map}, {2, list}]}],
+       maps_utils:convert_diff_paths(
+         [#{op => replace, value => 2, path => <<"/key1/key2/1">>},
+          #{op => remove, path => <<"/key1/1/key2/2">>}], list)),
+    ?assertEqual(
+       [#{op => replace, value => 2,
+          path => [{<<"key1">>, map}, {<<"key2">>, map}, {1, list}]},
+        #{op => remove,
+          path => [{<<"key1">>, map}, {1, list}, {<<"key2">>, map}, {2, list}]}],
+       maps_utils:convert_diff_paths(
+         [#{op => replace, value => 2, path => <<"/key1/key2/1">>},
+          #{op => remove, path => <<"/key1/1/key2/2">>}], binary)).
+
+
 %%==============================================================================
 %% Helper functions
 %%==============================================================================

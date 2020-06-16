@@ -17,7 +17,8 @@
          update/4,
          apply_diff/2,
          apply_diff/3,
-         revert_diff/2
+         revert_diff/2,
+         convert_diff_paths/2
         ]).
 
 %% exported for eunit only
@@ -35,6 +36,15 @@
 %%==============================================================================
 %% API functions
 %%==============================================================================
+
+-spec convert_diff_paths(Diff, KeyType) -> Res when
+      Diff :: list(diff_operator()),
+      KeyType :: atom | list | binary,
+      Res :: list(diff_operator()).
+convert_diff_paths(Diff, KeyType) ->
+    lists:map(fun(#{path := Path} = Op) ->
+                      Op#{path => convert_path(Path, KeyType)}
+              end, Diff).
 
 -spec rename_key(OldName, NewName, Map) -> Res when
       OldName :: term(),
@@ -249,6 +259,56 @@ sort_remove_operators(Diff) ->
 %%==============================================================================
 %% Internal functions
 %%==============================================================================
+
+-spec convert_path(Path, KeyType) -> Res when
+      Path :: binary(),
+      KeyType :: list | atom | binary,
+      Res :: path().
+convert_path(Path, KeyType) ->
+    PathEls = split_path(Path),
+    [convert_path_el(El, KeyType) || El <- PathEls].
+
+-spec split_path(Path) -> Res when
+      Path :: binary(),
+      Res :: list(binary()).
+split_path(Path) ->
+    lists:filter(fun(<<>>) -> false;
+                    (_Bin) -> true
+                 end, binary:split(Path, <<"/">>, [global])).
+
+-spec convert_path_el(Bin, KeyType) -> Res when
+      Bin :: binary(),
+      KeyType :: binary | atom | list,
+      Res :: path_el().
+convert_path_el(Bin, KeyType) ->
+    case bin2int(Bin) of
+        undefined ->
+            {convert_path_el_to_type(Bin, KeyType), map};
+        Idx ->
+            {Idx, list}
+    end.
+
+-spec bin2int(Bin) -> Res when
+      Bin :: binary(),
+      Res :: undefined | integer().
+bin2int(Bin) ->
+    case catch binary_to_integer(Bin) of
+        {'EXIT', _} ->
+            undefined;
+        Val ->
+            Val
+    end.
+
+-spec convert_path_el_to_type(Bin, KeyType) -> Res when
+      Bin :: binary(),
+      KeyType :: atom | binary | list,
+      Res :: atom() | binary() | string().
+convert_path_el_to_type(Bin, list) ->
+    binary_to_list(Bin);
+convert_path_el_to_type(Bin, binary) ->
+    Bin;
+convert_path_el_to_type(Bin, atom) ->
+    binary_to_atom(Bin, utf8).
 
 -spec reverted_diff(Diff) -> Res when
       Diff :: list(diff_operator()),
