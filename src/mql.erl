@@ -1,15 +1,17 @@
-%%%-------------------------------------------------------------------
+%%% -*- erlang-indent-level: 2;indent-tabs-mode: nil -*-
+%%% ex: ts=4 sw=4 et
+%%%-----------------------------------------------------------------------------
 %%% @doc
 %%% Map query language - DSL to modify maps
 %%% @end
-%%%-------------------------------------------------------------------
+%%%-----------------------------------------------------------------------------
 -module(mql).
 -compile({no_auto_import, [apply/2]}).
 
 -export([apply/2]).
 
 -ifdef(OTP_RELEASE).
--compile({inline,[take/2]}).
+-compile({inline, [take/2]}).
 take(Key, Map) ->
     maps:take(Key, Map).
 
@@ -23,7 +25,6 @@ take(Key, Map) ->
             error
     end.
 -endif.
-
 
 -type key() :: term().
 -type value() :: term().
@@ -42,12 +43,23 @@ take(Key, Map) ->
                 | {without, key() | [key()]}
                 | {replace_all, From :: value(), To :: value()}
                 | {remove_all, value()}.
+
+%%==============================================================================
+%% API functions
+%%==============================================================================
+
+%%------------------------------------------------------------------------------
 %% @doc
 %% Apply actions to modify map.
 %% @end
+%%------------------------------------------------------------------------------
 -spec apply([action()], map()) -> map().
 apply([], Map) ->
     Map;
+
+%%==============================================================================
+%% Internal functions
+%%==============================================================================
 
 %% append Value to list from Map:Key
 apply([{append, Key, Value} | Rest], Map) ->
@@ -94,7 +106,7 @@ apply([{ifdef, Key, Apply, ApplyElse} | Rest], Map) ->
 
 %% rename key From to key To
 apply([{rename, FromToList} | Rest], Map) ->
-    apply([{rename, F,T} || {F,T} <- FromToList] ++ Rest, Map);
+    apply([{rename, F, T} || {F, T} <- FromToList] ++ Rest, Map);
 apply([{rename, From, To} | Rest], Map) ->
     case take(From, Map) of
         {Value, Map2} -> apply(Rest, Map2#{To => Value});
@@ -116,100 +128,9 @@ apply([{without, Key} | Rest], Map) ->
 %% replace value of all entries of From to To
 %% for example: {replace_all, undefined, null}
 apply([{replace_all, From, To} | Rest], Map) ->
-    apply(Rest, maps:map(fun(_,V) when V == From -> To;
-                                   (_,V)-> V end, Map));
+    apply(Rest, maps:map(fun(_, V) when V == From -> To;
+                                   (_, V)-> V end, Map));
 
 %% remove all records where value equal to Value
 apply([{remove_all, Value} | Rest], Map) ->
-    apply(Rest, maps:filter(fun(_,V)-> V /= Value end, Map)).
-
-
-
-%% --------------- Tests ----------------------------------
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
-complex_test() ->
-    Map = #{path => "localhost",
-            body => <<>>,
-            headers => [],
-            code => 400,
-            etag => undefined,
-            user_key => ok},
-    Modificators = [{ifdef, path,
-                     [{set, version, 1}],
-                     [{set, version, 2}]},
-                    {ifeq, code, 200,
-                     [{set, status, "OK"}],
-                     [{without, body},
-                      {ifeq, code, 400,
-                       [{set, status, "malformed request"}],
-                       [{set, status, "unexpected error"}]}]},
-                    {ifset, body,
-                     [{append, headers, {"Content-Encoding", "gzip"}},
-                      {append, headers, {"Content-Type", "application/json"}}]},
-                    {with, [path, body, headers, code, version, status, etag]},
-                    {replace_all, undefined, null}
-                   ],
-    TestMap1 = apply(Modificators, Map),
-    ?assertMatch(#{status := "malformed request",
-                   version := 1,
-                   etag := null,
-                   headers := []}, TestMap1),
-    ?assertNot(maps:is_key(body, TestMap1)),
-    ?assertNot(maps:is_key(user_key, TestMap1)),
-
-    TestMap2 = apply([{without, path} | Modificators], Map#{code => 200}),
-    ?assertMatch(#{status := "OK",
-                   version := 2,
-                   body := <<>>,
-                   headers := [{"Content-Type", "application/json"},
-                               {"Content-Encoding", "gzip"}]}, TestMap2).
-
-commands_test_() ->
-    [?_test(?assertMatch(#{foo := bar}, apply([{set, foo, bar}], #{}))),
-     ?_test(?assertMatch(#{foo := "ok"}, apply([{append, foo, $k},
-                                                {append, foo, $o}], #{}))),
-     ?_test(?assertMatch(#{bar := 2}, apply([{remove, foo}], #{foo => 1, bar => 2}))),
-     ?_test(?assertMatch(#{result := true}, apply([{ifeq, foo, bar,
-                                                    [{set, result, true}]}], #{foo => bar}))),
-     ?_test(?assertMatch(#{result := false}, apply([{ifeq, foo, bar,
-                                                     [{set, result, true}],
-                                                     [{set, result, false}]}], #{foo => baz}))),
-     ?_test(?assertMatch(#{result := true}, apply([{ifset, foo,
-                                                    [{set, result, true}],
-                                                    [{set, result, false}]}], #{foo => bar}))),
-     ?_test(?assertMatch(#{result := false}, apply([{ifset, foo,
-                                                     [{set, result, true}],
-                                                     [{set, result, false}]}], #{foo => undefined}))),
-     ?_test(?assertMatch(#{result := false}, apply([{ifset, foo,
-                                                     [{set, result, true}]}], #{foo => undefined, result => false}))),
-     ?_test(?assertMatch(#{result := false}, apply([{ifset, foo,
-                                                     [{set, result, true}]}], #{foo => null, result => false}))),
-     ?_test(?assertMatch(#{result := true}, apply([{ifset, foo,
-                                                    [{set, result, true}]}], #{foo => bar, result => false}))),
-     ?_test(?assertMatch(#{result := false}, apply([{ifset, foo,
-                                                     [{set, result, true}]}], #{result => false}))),
-     ?_test(?assertMatch(#{result := false}, apply([{ifdef, foo,
-                                                     [{set, result, true}]}], #{result => false}))),
-     ?_test(?assertMatch(#{result := true}, apply([{ifdef, foo,
-                                                    [{set, result, true}]}], #{foo => undefined, result => false}))),
-     ?_test(?assertMatch(#{result := true}, apply([{ifdef, foo,
-                                                    [{set, result, true}],
-                                                    [{set, result, false}]}], #{foo => undefined}))),
-     ?_test(?assertMatch(#{result := false}, apply([{ifdef, foo,
-                                                     [{set, result, true}],
-                                                     [{set, result, false}]}], #{}))),
-     ?_test(?assertMatch(#{result := true}, apply([{rename, foo, result}], #{foo => true}))),
-     ?_test(?assertMatch([foo], maps:keys(apply([{rename, unexisting, bar}], #{foo => true})))),
-     ?_test(?assertMatch(#{result := true}, apply([{rename, [{foo, bar},
-                                                             {bar, result}]}], #{foo => true}))),
-     ?_test(?assertEqual([foo], maps:keys(apply([{with, foo}], #{foo => 1, bar => 2})))),
-     ?_test(?assertEqual([bar, foo], maps:keys(apply([{with, [foo, bar]}], #{foo => 1, bar => 2})))),
-     ?_test(?assertEqual([bar], maps:keys(apply([{without, foo}], #{foo => 1, bar => 2})))),
-     ?_test(?assertEqual([], maps:keys(apply([{without, [foo, bar]}], #{foo => 1, bar => 2})))),
-     ?_test(?assertEqual([ok, ok], maps:values(apply([{replace_all, undefined, ok}], #{foo => undefined, bar => undefined})))),
-     ?_test(?assertEqual([ok], maps:values(apply([{remove_all, undefined}], #{foo => undefined, bar => ok}))))
-    ].
-
--endif.
+    apply(Rest, maps:filter(fun(_, V)-> V /= Value end, Map)).
